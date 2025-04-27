@@ -14,44 +14,47 @@ const suggestions = {
 
 export default function App() {
   const [html, setHtml] = useState("");
-  const [results, setResults] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState({});
+  const [loading, setLoading] = useState({
+    analyze: false,
+    contrast: false,
+    keyboard: false,
+  });
+  const [error, setError] = useState("");
 
-  const handleAnalyze = async () => {
-    setLoading(true);
+  const handleRequest = async (endpoint, key) => {
+    setLoading((prev) => ({ ...prev, [key]: true }));
+    setError("");
     try {
-      const res = await axios.post("http://localhost:5000/analyze", { html });
-      setResults((prev) => ({ ...prev, analyze: res.data }));
-    } catch (error) {
-      console.error("Analysis failed:", error);
+      const res = await axios.post(`http://localhost:5000/${endpoint}`, {
+        html,
+      });
+      setResults((prev) => ({ ...prev, [key]: res.data }));
+    } catch (err) {
+      console.error(`${key} request failed:`, err);
+      setError(`Failed to fetch ${key} results. Please try again.`);
     } finally {
-      setLoading(false);
+      setLoading((prev) => ({ ...prev, [key]: false }));
     }
   };
 
-  const handleContrast = async () => {
-    setLoading(true);
-    try {
-      const res = await axios.post("http://localhost:5000/contrast", { html });
-      setResults((prev) => ({ ...prev, contrast: res.data }));
-    } catch (error) {
-      console.error("Contrast check failed:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleKeyboard = async () => {
-    setLoading(true);
-    try {
-      const res = await axios.post("http://localhost:5000/keyboard", { html });
-      setResults((prev) => ({ ...prev, keyboard: res.data }));
-    } catch (error) {
-      console.error("Keyboard simulation failed:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const buttons = [
+    {
+      label: "Run Analyzer",
+      action: () => handleRequest("analyze", "analyze"),
+      loadingKey: "analyze",
+    },
+    {
+      label: "Check Color Contrast",
+      action: () => handleRequest("contrast", "contrast"),
+      loadingKey: "contrast",
+    },
+    {
+      label: "Simulate Keyboard Navigation",
+      action: () => handleRequest("keyboard", "keyboard"),
+      loadingKey: "keyboard",
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 p-6">
@@ -66,49 +69,48 @@ export default function App() {
         />
 
         <div className="flex flex-wrap gap-4">
-          <button
-            onClick={handleAnalyze}
-            disabled={loading}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded font-medium disabled:opacity-50"
-          >
-            {loading ? "Analyzing..." : "Run Analyzer"}
-          </button>
-          <button
-            onClick={handleContrast}
-            disabled={loading}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded font-medium disabled:opacity-50"
-          >
-            Check Color Contrast
-          </button>
-          <button
-            onClick={handleKeyboard}
-            disabled={loading}
-            className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded font-medium disabled:opacity-50"
-          >
-            Simulate Keyboard Navigation
-          </button>
+          {buttons.map((btn, idx) => (
+            <button
+              key={idx}
+              onClick={btn.action}
+              disabled={loading[btn.loadingKey]}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded font-medium disabled:opacity-50"
+            >
+              {loading[btn.loadingKey] ? "Processing..." : btn.label}
+            </button>
+          ))}
         </div>
 
-        {results && (
-          <div className="mt-6 space-y-6">
+        {error && (
+          <div className="p-4 mt-4 bg-red-100 text-red-800 rounded shadow-sm">
+            ❌ {error}
+          </div>
+        )}
+
+        {Object.keys(results).length > 0 && (
+          <div className="mt-6 space-y-8">
             {results.analyze && (
               <div>
-                <div className="flex justify-between items-center mb-3">
-                  <h2 className="text-xl font-semibold">
-                    🚨 Accessibility Issues
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-2xl font-semibold">
+                    🚨 Accessibility Issues ({results.analyze.violations.length}
+                    )
                   </h2>
-                  <CSVLink
-                    data={results.analyze.violations.map((v) => ({
-                      id: v.id,
-                      description: v.description,
-                      impact: v.impact,
-                      suggestion: suggestions[v.id] || "Refer to documentation",
-                    }))}
-                    filename="accessibility-report.csv"
-                    className="text-sm px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded"
-                  >
-                    Export CSV
-                  </CSVLink>
+                  {results.analyze.violations.length > 0 && (
+                    <CSVLink
+                      data={results.analyze.violations.map((v) => ({
+                        id: v.id,
+                        description: v.description,
+                        impact: v.impact,
+                        suggestion:
+                          suggestions[v.id] || "Refer to documentation",
+                      }))}
+                      filename="accessibility-report.csv"
+                      className="text-sm px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded"
+                    >
+                      Export CSV
+                    </CSVLink>
+                  )}
                 </div>
                 {results.analyze.violations.length > 0 ? (
                   <ul className="space-y-4">
@@ -121,15 +123,15 @@ export default function App() {
                           <strong>{v.id}</strong>
                           <span
                             className={`text-xs px-2 py-1 rounded uppercase font-semibold
-                            ${
-                              v.impact === "critical"
-                                ? "bg-red-200 text-red-800"
-                                : v.impact === "serious"
-                                ? "bg-orange-200 text-orange-800"
-                                : v.impact === "moderate"
-                                ? "bg-yellow-200 text-yellow-800"
-                                : "bg-blue-200 text-blue-800"
-                            }`}
+                              ${
+                                v.impact === "critical"
+                                  ? "bg-red-200 text-red-800"
+                                  : v.impact === "serious"
+                                  ? "bg-orange-200 text-orange-800"
+                                  : v.impact === "moderate"
+                                  ? "bg-yellow-200 text-yellow-800"
+                                  : "bg-blue-200 text-blue-800"
+                              }`}
                           >
                             {v.impact}
                           </span>
@@ -158,8 +160,9 @@ export default function App() {
 
             {results.contrast && (
               <div className="p-4 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800">
-                <h2 className="text-xl font-semibold mb-3">
-                  🎨 Color Contrast Issues
+                <h2 className="text-2xl font-semibold mb-3">
+                  🎨 Color Contrast Issues (
+                  {results.contrast.contrastIssues.length})
                 </h2>
                 {results.contrast.contrastIssues.length > 0 ? (
                   <ul className="space-y-3">
@@ -168,9 +171,7 @@ export default function App() {
                         key={idx}
                         className="p-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded"
                       >
-                        <p className="text-sm text-gray-800 dark:text-gray-200">
-                          {c.message}
-                        </p>
+                        <p className="text-sm">{c.message}</p>
                         <div className="mt-1 text-xs text-gray-500 break-words">
                           {c.element}
                         </div>
@@ -186,20 +187,26 @@ export default function App() {
             )}
 
             {results.keyboard && (
-              <div>
-                <h2 className="text-xl font-semibold mb-2">
-                  ⌨️ Tabbable Elements
+              <div className="p-4 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800">
+                <h2 className="text-2xl font-semibold mb-3">
+                  ⌨️ Tabbable Elements ({results.keyboard.tabbable.length})
                 </h2>
-                <ul className="space-y-2 text-sm">
-                  {results.keyboard.tabbable.map((el, idx) => (
-                    <li
-                      key={idx}
-                      className="p-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded break-words"
-                    >
-                      {el}
-                    </li>
-                  ))}
-                </ul>
+                {results.keyboard.tabbable.length > 0 ? (
+                  <ul className="space-y-2 text-sm">
+                    {results.keyboard.tabbable.map((el, idx) => (
+                      <li
+                        key={idx}
+                        className="p-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded break-words"
+                      >
+                        {el}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="p-3 bg-green-100 text-green-800 rounded shadow">
+                    ✅ No tabbable elements issues found!
+                  </div>
+                )}
               </div>
             )}
           </div>
